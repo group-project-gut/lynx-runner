@@ -3,6 +3,7 @@ use actix_cors::Cors;
 use serde::{Deserialize, Serialize};
 use std::{fs::{OpenOptions, create_dir}, io::{Write, ErrorKind}};
 use subprocess::{Exec, Redirection};
+use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct UserCode {
@@ -22,7 +23,6 @@ struct TestCode {
     test_cases: Vec<TestCase>
 }
 
-
 #[derive(Debug, Serialize, Deserialize)]
 struct CodeOutput {
     stdout: Vec<String>,
@@ -34,7 +34,6 @@ struct TestOutput {
     passed: u32,
     failed: u32,
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ErrorOutput {
@@ -189,56 +188,41 @@ async fn send_code(item: web::Json<UserCode>, _: HttpRequest) -> HttpResponse {
     HttpResponse::Ok().json(output) // <- send json response
 }
 
-/*
- * TODO: REMEMBER THAT TEST CASES PROVIDED BY USER ARE NOT TO BE TRUSTED!!!
- */
-async fn test_code(item: web::Json<TestCode>, _: HttpRequest) -> HttpResponse {
-
-    /*
-     * TODO: Add session handling in order to get 
-     * proper usernames
-     */
-    let username = "testuser";
-
-    let mut output = TestOutput {
-        passed: 0,
-        failed: 0,
-    };
-
-    for test_case in &item.test_cases {
-        let (stdout, stderr) = match run_code(username, &item.code, &test_case.stdin) {
-            Ok(value) => value,
-            Err(value) => return value,
-        };
-
-        let code_output = CodeOutput {
-            stdout: stdout.split("\n").map(str::to_string).collect(),
-            stderr: stderr.split("\n").map(str::to_string).collect(),
-        };
-
-        /*
-         * Compare users code stdout to test case stdout
-         */
-        let matching = test_case.stdout.iter().zip(&code_output.stdout).filter(|&(a, b)| a == b).count() == test_case.stdout.len();
-        if matching {
-            output.passed += 1;
-        } else {
-            output.failed += 1;
-        }
-    }
-
-    HttpResponse::Ok().json(output) // <- send json response
+fn help() {
+    println!("usage:
+lnx-runner <PORT>
+    Run lnx-runner at PORT");
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    let args: Vec<String> = env::args().collect();
+    let port: u16;
+
+    match args.len() {
+        2 => {
+            port = match args[1].parse::<u16>() {
+                Ok(port) => port,
+                Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidInput, "Could not parse port")),
+            };
+        },
+        // all the other cases
+        _ => {
+            // show a help message
+            help();
+            return Err(std::io::Error::new(ErrorKind::InvalidInput, "Not enough arguments"))
+        }
+    }
+
+    /*
+     * Create runner server
+     */
     HttpServer::new(|| {
         let cors = Cors::permissive();
         App::new().wrap(cors)
             .service(web::resource("/send_code").route(web::post().to(send_code)))
-            .service(web::resource("/test_code").route(web::post().to(test_code)))
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind(("0.0.0.0", port))?
     .run()
     .await
 }
