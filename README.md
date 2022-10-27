@@ -1,12 +1,10 @@
-# code-fiddle-client
+# LNX-runner
 
-- [code-fiddle-client](#code-fiddle-client)
+- [code-fiddle-client](#lnx-runner)
   - [Architecture](#architecture)
   - [Development](#development)
 
-I'm working on a small coding competition for primary school students and I wanted 
-to create seamless environment in browser for them to learn without the need to
-install IDEs or commandline tools.
+Runner is a microservice handling code execution requests
 
 ## Architecture
 
@@ -16,8 +14,7 @@ safe and consistent environment. Also, I want to keep it as simple as possible.
 
 ## Development
 
-The project is in very (very) early phase. These are milestones for version 0.0.1:
+The project is in very (very) early phase. These are milestones for version 0.1:
 
 - [X] reading JSON input from front-end
 - [X] running user code in podman container
-- [ ] code evaluation
