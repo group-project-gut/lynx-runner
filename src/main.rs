@@ -145,7 +145,7 @@ fn run_code(username: &str, code: &Vec<String>, stdin: &Vec<String>) -> Result<(
         .arg("2")
         .arg("-v")
         .arg(volume)
-        .arg("code-fiddle-python-3.10")
+        .arg("lnx-runtime:0.1")
         .stdout(Redirection::Pipe)
         .stderr(Redirection::Merge)
         .capture();
