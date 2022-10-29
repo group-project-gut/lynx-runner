@@ -7,32 +7,13 @@ use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct UserCode {
-    stdin: Vec<String>,
     code: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct TestCase {
-    stdin: Vec<String>,
-    stdout: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct TestCode {
-    code: Vec<String>,
-    test_cases: Vec<TestCase>
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct CodeOutput {
     stdout: Vec<String>,
     stderr: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct TestOutput {
-    passed: u32,
-    failed: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,7 +64,7 @@ fn write_whole_file(filepath: String, content: &Vec<String>) -> Result<() ,HttpR
 /*
  * 
  */
-fn run_code(username: &str, code: &Vec<String>, stdin: &Vec<String>) -> Result<(String, String), HttpResponse> {
+fn run_code(username: &str, code: &Vec<String>) -> Result<(String, String), HttpResponse> {
     /*
      * Create path to users directory where his code will be stored
      * and create argument string for a volume that is passed to
@@ -115,16 +96,6 @@ fn run_code(username: &str, code: &Vec<String>, stdin: &Vec<String>) -> Result<(
     let code_path = "./usr/".to_string() + username + "/code.py"; /* It's not done properly I think */
     let write_code_result = write_whole_file(code_path, code);
     match write_code_result {
-        Ok(_) => (),
-        Err(value) => return Err(value),
-    };
-
-    /*
-     * Create a file containing stdin supplied from user or test case
-     */
-    let stdin_path = "./usr/".to_string() + username + "/stdin"; /* It's not done properly I think */
-    let write_stdin_result = write_whole_file(stdin_path, stdin);
-    match write_stdin_result {
         Ok(_) => (),
         Err(value) => return Err(value),
     };
@@ -171,7 +142,7 @@ async fn send_code(item: web::Json<UserCode>, _: HttpRequest) -> HttpResponse {
      */
     let username = "testuser";
 
-    let (stdout, stderr) = match run_code(username, &item.code, &item.stdin) {
+    let (stdout, stderr) = match run_code(username, &item.code) {
         Ok(value) => value,
         Err(value) => return value,
     };
