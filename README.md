@@ -13,6 +13,12 @@ The idea is to make the service both safe and easy to tune to various needs,
 so we'd like to dispatch user code into docker containers and run it in a
 safe and consistent environment. Also, we want to keep it as simple as possible.
 
+## Running in container
+In order to run `lynx-runner` at port `9233` use:
+
+    podman pull ghcr.io/group-project-gut/lynx-runner:0.1
+    podman run --privileged -p 9233:9000 lynx-runner:0.1
+
 ## Development
 
 #### version 0.1:
