@@ -118,7 +118,7 @@ fn run_code(username: &str, code: &Vec<String>) -> Result<(String, String), Http
         .arg(volume)
         .arg("lynx-runtime:0.1")
         .stdout(Redirection::Pipe)
-        .stderr(Redirection::Merge)
+        .stderr(Redirection::Pipe)
         .capture();
     let process = match process_result {
         Ok(process) => process,
@@ -126,9 +126,9 @@ fn run_code(username: &str, code: &Vec<String>) -> Result<(String, String), Http
     };
 
     let stdout = process.stdout_str();
-    let stderr = process.stdout_str();
+    let stderr = process.stderr_str();
     println!("STDOUT:\n{stdout}");
-    println!("STDERR:\n{stdout}");
+    println!("STDERR:\n{stderr}");
     
     Ok((stdout, stderr))
 }
