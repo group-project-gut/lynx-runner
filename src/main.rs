@@ -116,7 +116,7 @@ fn run_code(username: &str, code: &Vec<String>) -> Result<(String, String), Http
         .arg("2")
         .arg("-v")
         .arg(volume)
-        .arg("lnx-runtime:0.1")
+        .arg("lynx-runtime:0.1")
         .stdout(Redirection::Pipe)
         .stderr(Redirection::Merge)
         .capture();
@@ -161,8 +161,8 @@ async fn send_code(item: web::Json<UserCode>, _: HttpRequest) -> HttpResponse {
 
 fn help() {
     println!("usage:
-lnx-runner <PORT>
-    Run lnx-runner at PORT");
+lynx-runner <PORT>
+    Run lynx-runner at PORT");
 }
 
 #[actix_web::main]
