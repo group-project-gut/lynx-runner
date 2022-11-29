@@ -1,7 +1,8 @@
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_cors::Cors;
 use serde::{Deserialize, Serialize};
-use std::{fs::{OpenOptions, create_dir}, io::{Write, ErrorKind}};
+use core::time;
+use std::{fs::{OpenOptions, create_dir}, io::{Write, ErrorKind, Read, BufReader, BufRead, BufWriter}, process::{Command, Stdio}, thread};
 use subprocess::{Exec, Redirection};
 use std::env;
 
@@ -108,29 +109,57 @@ fn run_code(username: &str, code: &Vec<String>) -> Result<(String, String), Http
      * and execute it.
      * TODO: Limit containters memory
      */
-    let process_result = Exec::cmd("podman")
-        .arg("run")
+    let mut process_result = Command::new("cat")
+        //.arg("run")
         //.arg("-m")
         //.arg("256m")
-        .arg("--timeout")
-        .arg("2")
-        .arg("-v")
-        .arg(volume)
-        .arg("lynx-runtime:0.1")
-        .stdout(Redirection::Pipe)
-        .stderr(Redirection::Pipe)
-        .capture();
-    let process = match process_result {
+        //.arg("--timeout")
+        //.arg("2")
+        //.arg("-v")
+        //.arg(volume)
+        //.arg("lynx-runtime:0.1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn();
+
+    let mut process = match process_result {
         Ok(process) => process,
         Err(_) => return Err(HttpResponse::Ok().json(ErrorOutput::new(-5,"Could not run users container"))),
     };
 
-    let stdout = process.stdout_str();
-    let stderr = process.stderr_str();
-    println!("STDOUT:\n{stdout}");
-    println!("STDERR:\n{stderr}");
+    let mut stdout = match process.stdout {
+        Some(stdout) => stdout,
+        None => return Err(HttpResponse::Ok().json(ErrorOutput::new(-6,"Could not access child process stdout"))),
+    };
     
-    Ok((stdout, stderr))
+    let mut stdout_reader = BufReader::new(stdout);
+
+    let mut stdin = match process.stdin {
+        Some(stdin) => stdin,
+        None => return Err(HttpResponse::Ok().json(ErrorOutput::new(-7,"Could not access child process stdin"))),
+    };
+
+    let mut stdin_writer = BufWriter::new(stdin);
+
+    // Nie działa
+    stdin_writer.write_all(b"TEST XXX\n").unwrap();
+    
+    // Działa
+    // std::thread::spawn(move || {
+    //     stdin_writer.write_all(b"TEST XXX\n").unwrap();
+    // });
+
+    let mut output: String = String::new();
+    stdout_reader.read_line(&mut output);
+
+    // let output = process
+    //     .wait_with_output()
+    //     .expect("failed to wait on child");
+
+    println!("STDOUT:\n{output}");
+    println!("STDERR:\n{output}");
+    
+    Ok((output, "asd".to_string()))
 }
 
 /// This handler uses json extractor with limit
@@ -177,6 +206,9 @@ async fn main() -> std::io::Result<()> {
                 Err(_) => return Err(std::io::Error::new(ErrorKind::InvalidInput, "Could not parse port")),
             };
         },
+        1 => {
+            port = 9455;
+        }
         // all the other cases
         _ => {
             // show a help message
