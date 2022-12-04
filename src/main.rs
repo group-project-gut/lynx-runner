@@ -3,6 +3,7 @@ use actix_web::{
     web::{self, Data},
     App, HttpRequest, HttpResponse, HttpServer,
 };
+use crossbeam::scope;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -203,13 +204,14 @@ fn run_code(
     /*
      * Get process to run the code in
      */
-    //let data = req.app_data::<Data<Mutex<MyData>>>().unwrap();
     let mut my_data = data.lock().unwrap();
     let process_option = my_data.processes.get_mut(&username);
+
     let process_tuple = match process_option {
         Some(process_tuple) => process_tuple,
-        None => return Err("There is no interactive session for the purpose!".to_string()),
+        None => return Err("There is no interactive session for the user!".to_string()),
     };
+
     let reader = &mut process_tuple.0;
     let writer = &mut process_tuple.1;
 
@@ -225,10 +227,22 @@ fn run_code(
     //         Err(e) => println!("{}", e.to_string()),
     //     };
     // });
-    match writer.write_all(b"CODE UPLOADED\n") {
-        Ok(_) => (),
-        Err(e) => println!("{}", e.to_string()),
-    };
+
+    /*
+     * Spawn a scoped thread and write to containers stdin
+     */
+    scope(|s| {
+        let handle = s.spawn(|_| {
+            match writer.write_all(b"CODE UPLOADED\n") {
+                Ok(_) => (),
+                Err(e) => println!("{}", e.to_string()),
+            };
+            println!("Written!");
+        });
+
+        handle.join().unwrap();
+    })
+    .unwrap();
 
     let mut output: String = String::new();
     loop {
@@ -296,7 +310,8 @@ async fn create_session(
         }
     };
 
-    my_data.processes
+    my_data
+        .processes
         .insert(request.username.clone(), (reader, writer));
 
     let response = CreateSessionResponse {
