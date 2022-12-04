@@ -219,12 +219,16 @@ fn run_code(
      */
 
     // Działa
-    // std::thread::spawn(move || {
+    // let writing_thread = std::thread::spawn(move || {
     //     match writer.write_all(b"CODE UPLOADED\n") {
     //         Ok(_) => (),
     //         Err(e) => println!("{}", e.to_string()),
     //     };
     // });
+    match writer.write_all(b"CODE UPLOADED\n") {
+        Ok(_) => (),
+        Err(e) => println!("{}", e.to_string()),
+    };
 
     let mut output: String = String::new();
     loop {
@@ -253,9 +257,7 @@ async fn send_code(
      * TODO: Add session handling in order to get
      * proper usernames
      */
-    let username = "testuser".to_string();
-
-    let (stdout, stderr) = match run_code(username, &item.code, data) {
+    let (stdout, stderr) = match run_code(item.username.clone(), &item.code, data) {
         Ok(value) => value,
         Err(err) => return HttpResponse::Ok().json(ErrorOutput::new(-1, err)),
     };
@@ -277,9 +279,9 @@ async fn create_session(
     data: Data<Mutex<StaticData>>,
     _: HttpRequest,
 ) -> HttpResponse {
-    let mut data = data.lock().unwrap();
+    let mut my_data = data.lock().unwrap();
 
-    if data.processes.contains_key(&request.username) {
+    if my_data.processes.contains_key(&request.username) {
         return HttpResponse::Ok().json(ErrorOutput::new(-1, "Session already exists".to_string()));
     }
 
@@ -294,7 +296,7 @@ async fn create_session(
         }
     };
 
-    data.processes
+    my_data.processes
         .insert(request.username.clone(), (reader, writer));
 
     let response = CreateSessionResponse {
@@ -343,7 +345,7 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    let data = Arc::new(Mutex::new(StaticData {
+    let data = Data::new(Mutex::new(StaticData {
         processes: HashMap::new(),
     }));
 
@@ -356,7 +358,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .service(web::resource("/send_code").route(web::get().to(send_code)))
             .service(web::resource("/create_session").route(web::get().to(create_session)))
-            .app_data(data.clone())
+            .app_data(Data::clone(&data))
     })
     .bind(("0.0.0.0", port))?
     .run()
