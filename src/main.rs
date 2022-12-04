@@ -1,10 +1,11 @@
 use actix_web::{web, App, HttpRequest, HttpResponse, HttpServer};
 use actix_cors::Cors;
 use serde::{Deserialize, Serialize};
-use core::time;
-use std::{fs::{OpenOptions, create_dir}, io::{Write, ErrorKind, Read, BufReader, BufRead, BufWriter}, process::{Command, Stdio}, thread};
-use subprocess::{Exec, Redirection};
+use std::{fs::{OpenOptions, create_dir}, io::{Write, ErrorKind, Read, BufReader, BufRead, BufWriter}, process::{Command, Stdio, ChildStdout, ChildStdin, Child}, thread};
 use std::env;
+use lazy_static::lazy_static;
+use std::collections::HashMap;
+
 
 #[derive(Debug, Serialize, Deserialize)]
 struct UserCode {
@@ -27,6 +28,13 @@ impl ErrorOutput {
     pub fn new(code :i32,error :&str) -> ErrorOutput {
         return ErrorOutput { code: code, error: String::from(error) }
     }
+}
+
+lazy_static! {
+    static ref PROCESSES: HashMap<&'static String, &'static Child> = {
+        let mut m = HashMap::new();
+        m
+    };
 }
 
 fn write_whole_file(filepath: String, content: &Vec<String>) -> Result<() ,HttpResponse> {
@@ -109,52 +117,62 @@ fn run_code(username: &str, code: &Vec<String>) -> Result<(String, String), Http
      * and execute it.
      * TODO: Limit containters memory
      */
-    let mut process_result = Command::new("cat")
-        //.arg("run")
+    let mut process_result = Command::new("podman")
+        .arg("run")
         //.arg("-m")
         //.arg("256m")
-        //.arg("--timeout")
-        //.arg("2")
-        //.arg("-v")
-        //.arg(volume)
-        //.arg("lynx-runtime:0.1")
+        .arg("--interactive") // Interactive option of `podman`
+        .arg("--timeout")
+        .arg("3600")
+        .arg("-v")
+        .arg(volume)
+        .arg("lynx-runtime:0.3")
+        .arg("--interactive") // Interactive option of `runtime` 
+        .arg("/code/code.py")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn();
 
-    let mut process = match process_result {
+    let process = match process_result {
         Ok(process) => process,
         Err(_) => return Err(HttpResponse::Ok().json(ErrorOutput::new(-5,"Could not run users container"))),
     };
 
-    let mut stdout = match process.stdout {
+    let stdout = match process.stdout {
         Some(stdout) => stdout,
         None => return Err(HttpResponse::Ok().json(ErrorOutput::new(-6,"Could not access child process stdout"))),
     };
     
     let mut stdout_reader = BufReader::new(stdout);
 
-    let mut stdin = match process.stdin {
+    let stdin = match process.stdin {
         Some(stdin) => stdin,
         None => return Err(HttpResponse::Ok().json(ErrorOutput::new(-7,"Could not access child process stdin"))),
     };
 
     let mut stdin_writer = BufWriter::new(stdin);
-
-    // Nie działa
-    stdin_writer.write_all(b"TEST XXX\n").unwrap();
     
+    PROCESSES.insert(&username.to_string(), &process);
+
     // Działa
-    // std::thread::spawn(move || {
-    //     stdin_writer.write_all(b"TEST XXX\n").unwrap();
-    // });
+    std::thread::spawn(move || {
+        match stdin_writer.write_all(b"CODE UPLOADED\n") {
+            Ok(_) => (),
+            Err(e) => println!("{}", e.to_string())
+        };
+    });
 
     let mut output: String = String::new();
-    stdout_reader.read_line(&mut output);
-
-    // let output = process
-    //     .wait_with_output()
-    //     .expect("failed to wait on child");
+    loop {
+        let mut line: String = String::new();
+        match stdout_reader.read_line(&mut line) {
+            Ok(_) => output += &line,
+            Err(_) =>  return Err(HttpResponse::Ok().json(ErrorOutput::new(-8,"Could not read line from stdout"))),
+        }
+        if line.contains("{ \"base_class_name\" : \"Action\", \"class_name\" : \"Move\", \"properties\" : {\"agent_id\": 0, \"direction\": \"UP\"} }") {
+            break;
+        }
+    }
 
     println!("STDOUT:\n{output}");
     println!("STDERR:\n{output}");
@@ -223,7 +241,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         let cors = Cors::permissive();
         App::new().wrap(cors)
-            .service(web::resource("/send_code").route(web::post().to(send_code)))
+            .service(web::resource("/send_code").route(web::post().to(send_code))).
     })
     .bind(("0.0.0.0", port))?
     .run()
