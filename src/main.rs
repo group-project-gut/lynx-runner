@@ -275,9 +275,9 @@ async fn create_session(
 ) -> HttpResponse {
     let mut my_data = data.lock().unwrap();
 
-    if my_data.processes.contains_key(&request.username) {
-        return HttpResponse::Ok().json(ErrorResponse::new(-1, "Session already exists".to_string()));
-    }
+    // if my_data.processes.contains_key(&request.username) {
+    //     return HttpResponse::Ok().json(ErrorResponse::new(-1, "Session already exists".to_string()));
+    // }
 
     let container_result = create_container(request.username.clone(), true);
     let (mut reader, writer) = match container_result {
