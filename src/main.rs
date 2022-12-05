@@ -3,7 +3,6 @@ use actix_web::{
     web::{self, Data},
     App, HttpRequest, HttpResponse, HttpServer,
 };
-use crossbeam::scope;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
@@ -12,17 +11,16 @@ use std::{
     io::{BufRead, BufReader, BufWriter, ErrorKind, Read, Write},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{Arc, Mutex},
-    thread,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
-struct UserCode {
+struct SendCodeRequest {
     username: String,
     code: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct CodeOutput {
+struct SendCodeResponse {
     stdout: Vec<String>,
     stderr: Vec<String>,
 }
@@ -33,19 +31,14 @@ struct CreateSessionRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct CreateSessionResponse {
-    text: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ErrorOutput {
+struct ErrorResponse {
     code: i32,
     error: String,
 }
 
-impl ErrorOutput {
-    pub fn new(code: i32, error: String) -> ErrorOutput {
-        return ErrorOutput {
+impl ErrorResponse {
+    pub fn new(code: i32, error: String) -> ErrorResponse {
+        return ErrorResponse {
             code: code,
             error: error,
         };
@@ -90,6 +83,22 @@ fn write_whole_file(filepath: String, content: &Vec<String>) -> Result<(), Strin
     Ok(())
 }
 
+fn read_until_wait(reader: &mut BufReader<ChildStdout>) -> Result<String, String> {
+    let mut output: String = String::new();
+    loop {
+        let mut line: String = String::new();
+        match reader.read_line(&mut line) {
+            Ok(_) => (),
+            Err(_) => return Err("Could not read line from stdout".to_string()),
+        }
+        output += &line;
+        if line.contains("{ \"base_class_name\" : \"Action\", \"class_name\" : \"WaitForCode\", \"properties\" : {} }") {
+            break;
+        }
+    }
+    Ok(output)
+}
+
 /*
  * Creates container process and returns ownership of created:
  *  - Writer
@@ -99,6 +108,22 @@ fn create_container(
     username: String,
     interactive: bool,
 ) -> Result<(BufReader<ChildStdout>, BufWriter<ChildStdin>), String> {
+    /*
+     * Create directory for users code
+     * TODO: check if it already exists
+     */
+    let dir = "./usr/".to_string() + &username;
+    let create_dir_result = create_dir(dir);
+    match create_dir_result {
+        Ok(_) => (),
+        Err(error) => match error.kind() {
+            ErrorKind::AlreadyExists => (),
+            _ => {
+                return Err("Could not create users directory".to_string());
+            }
+        },
+    }
+
     /*
      * Create path to users directory where his code will be stored
      * and create argument string for a volume that is passed to
@@ -170,22 +195,6 @@ fn run_code(
     data: Data<Mutex<StaticData>>,
 ) -> Result<(String, String), String> {
     /*
-     * Create directory for users code
-     * TODO: check if it already exists
-     */
-    let dir = "./usr/".to_string() + &username;
-    let create_dir_result = create_dir(dir);
-    match create_dir_result {
-        Ok(_) => (),
-        Err(error) => match error.kind() {
-            ErrorKind::AlreadyExists => (),
-            _ => {
-                return Err("Could not create users directory".to_string());
-            }
-        },
-    }
-
-    /*
      * Write users code do code.py
      */
     let code_path = "./usr/".to_string() + &username + "/code.py"; /* It's not done properly I think */
@@ -194,12 +203,6 @@ fn run_code(
         Ok(_) => (),
         Err(value) => return Err(value),
     };
-
-    // let container_result = create_container(username);
-    // let (mut reader, mut writer) = match container_result {
-    //     Ok(container) => container,
-    //     Err(_) => return Err("Could not create new container".to_string()),
-    // };
 
     /*
      * Get process to run the code in
@@ -216,54 +219,31 @@ fn run_code(
     let writer = &mut process_tuple.1;
 
     /*
-     * We have access to processes buffers by creating new or using the interactive one,
+     * We have access to processes buffers by (creating new container or) using the interactive one,
      * Now we should signal that the runtime can continue execution
      */
+    match writer.write_all(b"CODE UPLOADED\n") {
+        Ok(_) => (),
+        Err(e) => println!("{}", e.to_string()),
+    };
+    match writer.flush() {
+        Ok(_) => (),
+        Err(e) => println!("{}", e.to_string()),
+    };
 
-    // Działa
-    // let writing_thread = std::thread::spawn(move || {
-    //     match writer.write_all(b"CODE UPLOADED\n") {
-    //         Ok(_) => (),
-    //         Err(e) => println!("{}", e.to_string()),
-    //     };
-    // });
-
-    /*
-     * Spawn a scoped thread and write to containers stdin
-     */
-    scope(|s| {
-        let handle = s.spawn(|_| {
-            match writer.write_all(b"CODE UPLOADED\n") {
-                Ok(_) => (),
-                Err(e) => println!("{}", e.to_string()),
-            };
-            println!("Written!");
-        });
-
-        handle.join().unwrap();
-    })
-    .unwrap();
-
-    let mut output: String = String::new();
-    loop {
-        let mut line: String = String::new();
-        match reader.read_line(&mut line) {
-            Ok(_) => output += &line,
-            Err(_) => return Err("Could not read line from stdout".to_string()),
-        }
-        if line.contains("{ \"base_class_name\" : \"Action\", \"class_name\" : \"Move\", \"properties\" : {\"agent_id\": 0, \"direction\": \"UP\"} }") {
-            break;
-        }
-    }
+    let output = match read_until_wait(reader) {
+        Ok(value) => value,
+        Err(value) => return Err(value),
+    };
 
     println!("STDOUT:\n{output}");
-    println!("STDERR:\n{output}");
+    println!("STDERR:\n");
 
-    Ok((output, "asd".to_string()))
+    Ok((output.clone(), output.clone()))
 }
 
 async fn send_code(
-    item: web::Json<UserCode>,
+    item: web::Json<SendCodeRequest>,
     data: Data<Mutex<StaticData>>,
     _: HttpRequest,
 ) -> HttpResponse {
@@ -273,16 +253,16 @@ async fn send_code(
      */
     let (stdout, stderr) = match run_code(item.username.clone(), &item.code, data) {
         Ok(value) => value,
-        Err(err) => return HttpResponse::Ok().json(ErrorOutput::new(-1, err)),
+        Err(err) => return HttpResponse::Ok().json(ErrorResponse::new(-1, err)),
     };
 
     /*
      * We return the code as a list of strings, so we must split it
      * by the newline character.
      */
-    let output = CodeOutput {
+    let output = SendCodeResponse {
         stdout: stdout.split("\n").map(str::to_string).collect(),
-        stderr: stderr.split("\n").map(str::to_string).collect(),
+        stderr: vec!["".to_string()],
     };
 
     HttpResponse::Ok().json(output) // <- send json response
@@ -296,16 +276,26 @@ async fn create_session(
     let mut my_data = data.lock().unwrap();
 
     if my_data.processes.contains_key(&request.username) {
-        return HttpResponse::Ok().json(ErrorOutput::new(-1, "Session already exists".to_string()));
+        return HttpResponse::Ok().json(ErrorResponse::new(-1, "Session already exists".to_string()));
     }
 
     let container_result = create_container(request.username.clone(), true);
-    let (reader, writer) = match container_result {
+    let (mut reader, writer) = match container_result {
         Ok(container) => container,
         Err(_) => {
-            return HttpResponse::Ok().json(ErrorOutput::new(
+            return HttpResponse::Ok().json(ErrorResponse::new(
                 -1,
                 "Could not create new container".to_string(),
+            ))
+        }
+    };
+
+    let output = match read_until_wait(&mut reader) {
+        Ok(output) => output,
+        Err(_) => {
+            return HttpResponse::Ok().json(ErrorResponse::new(
+                -1,
+                "Could not read new containers output".to_string(),
             ))
         }
     };
@@ -314,8 +304,13 @@ async fn create_session(
         .processes
         .insert(request.username.clone(), (reader, writer));
 
-    let response = CreateSessionResponse {
-        text: "Successfully created new interactive session".to_string(),
+    /*
+     * We use the same kind of response as in `send_code`, so
+     * the frontends can easily show newly created scene
+     */
+    let response = SendCodeResponse {
+        stdout: output.split("\n").map(str::to_string).collect(),
+        stderr: vec!["".to_string()],
     };
 
     HttpResponse::Ok().json(response)
