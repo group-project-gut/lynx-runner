@@ -366,8 +366,8 @@ async fn main() -> std::io::Result<()> {
         let cors = Cors::permissive();
         App::new()
             .wrap(cors)
-            .service(web::resource("/send_code").route(web::get().to(send_code)))
-            .service(web::resource("/create_session").route(web::get().to(create_session)))
+            .service(web::resource("/send_code").route(web::post().to(send_code)))
+            .service(web::resource("/create_session").route(web::post().to(create_session)))
             .app_data(Data::clone(&data))
     })
     .bind(("0.0.0.0", port))?
