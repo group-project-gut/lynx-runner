@@ -7,8 +7,6 @@ name: Build and publish the container image
   push:
     tags:
       - '[0-9]+.[0-9]+[abcde]'
-    branches:
-      - 'master'
 
 jobs:
   build-and-push-image:
