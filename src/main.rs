@@ -157,7 +157,7 @@ fn create_container(
         .arg("3600")
         .arg("-v")
         .arg(volume)
-        .arg("lynx-runtime:0.3")
+        .arg("lynx-runtime:0.4")
         .arg(interactive_arg) // Interactive option of `runtime`
         .arg("/code/code.py")
         .stdin(Stdio::piped())
